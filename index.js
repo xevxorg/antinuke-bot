@@ -4,12 +4,12 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Antinuke Premium Bot Running 🛡️'));
 app.listen(PORT, () => console.log(`✅ Port ${PORT} open — Ready!`));
 
-const { Client, Events, GatewayIntentBits, AuditLogEvent, EmbedBuilder, REST, Routes, PermissionsBitField } = require('discord.js');
+const { Client, Events, GatewayIntentBits, AuditLogEvent, EmbedBuilder, REST, Routes } = require('discord.js');
 
 const token = process.env.token;
 const botOwnerId = process.env.ownerId;
 
-// === CONFIGURATION ===
+// === CONFIG ===
 const CONFIG = {
   prefix: '!',
   premiumKey: 'premiumactivationgodsosixev',
@@ -17,23 +17,12 @@ const CONFIG = {
   whitelistedRoles: [],
   premiumGuilds: new Set(),
   strictMode: false,
-  thresholds: {
-    bans: 2, kicks: 2, channels: 2, roles: 2, webhooks: 1, bots: 1
-  },
+  thresholds: { bans: 2, kicks: 2, channels: 2, roles: 2, webhooks: 1, bots: 1 },
   timeWindow: 15000,
-  guildPrefixes: new Map(),
-  guildPfp: new Map()
+  guildPrefixes: new Map()
 };
 
 const tracker = new Map();
-
-// === HELPER: Check if user has owner access ===
-async function hasOwnerAccess(member, guild) {
-  if (member.id === botOwnerId) return true;
-  const fetchedGuild = guild || await member.client.guilds.fetch(member.guildId).catch(() => null);
-  if (fetchedGuild && fetchedGuild.ownerId === member.id) return true;
-  return false;
-}
 
 // === BOT SETUP ===
 const client = new Client({
@@ -46,7 +35,7 @@ const client = new Client({
   ]
 });
 
-// === SLASH COMMANDS ===
+// === ALL SLASH COMMANDS — COMPLETE LIST ===
 const commands = [
   { name: 'help', description: 'Show all commands & your current prefix' },
   { name: 'premcmds', description: 'Show Premium features list' },
@@ -131,34 +120,30 @@ const commands = [
   { name: 'ping', description: 'Check bot latency' }
 ];
 
-// === READY ===
+// === READY & REGISTER COMMANDS ===
 client.on(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   try {
+    console.log('🔄 Registering commands...');
     const rest = new REST({ version: '10' }).setToken(token);
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('💎 All Commands Registered — Bot Ready!');
-  } catch (err) { console.error('Command Error:', err); }
+    console.log('💎 SUCCESS — All Commands Registered!');
+  } catch (err) {
+    console.error('❌ Command Register Error:', err);
+  }
 });
 
 // === ANTI-NUKE DETECTION ===
 client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
   const { action, executor, guild } = entry;
   if (!executor) return;
+  if (executor.id === botOwnerId || guild.ownerId === executor.id || CONFIG.whitelist.includes(executor.id)) return;
   
-  const isBotOwner = executor.id === botOwnerId;
-  const isServerOwner = guild.ownerId === executor.id;
-  if (isBotOwner || isServerOwner || CONFIG.whitelist.includes(executor.id)) return;
-  
-  const hasWhitelistedRole = executor.roles ? [...executor.roles.cache.values()].some(r => CONFIG.whitelistedRoles.includes(r.id)) : false;
-  if (hasWhitelistedRole) return;
-
   const now = Date.now();
   const key = `${guild.id}-${executor.id}`;
   if (!tracker.has(key)) tracker.set(key, []);
   const actions = tracker.get(key);
   actions.push({ action, time: now });
-  
   const recent = actions.filter(a => now - a.time < CONFIG.timeWindow);
   tracker.set(key, recent);
 
@@ -182,7 +167,7 @@ client.on(Events.GuildAuditLogEntryCreate, async (entry) => {
 // === SLASH COMMAND HANDLER ===
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, user, options, guildId, member } = interaction;
+  const { commandName, user, options, guildId } = interaction;
   
   const isBotOwner = user.id === botOwnerId;
   const isServerOwner = interaction.guild?.ownerId === user.id;
@@ -199,18 +184,13 @@ client.on(Events.InteractionCreate, async interaction => {
     const roleText = isBotOwner ? '👑 Bot Owner' : (isServerOwner ? '🏠 Server Owner' : '👤 Member');
     await interaction.reply({ embeds: [new EmbedBuilder()
       .setTitle('🛡️ SAKATO — Help Menu')
-      .setDescription(`🔤 **Current Prefix:** \`${prefix}\`\n👤 **Your Role:** ${roleText}\nUse \`${prefix}help\` or \`/help\` to show this menu`)
+      .setDescription(`🔤 **Current Prefix:** \`${prefix}\`\n👤 **Your Role:** ${roleText}`)
       .addFields(
-        { name: '📋 Basic Commands', value: `\`/ping\` — Check bot online & latency\n\`/help\` — Show this menu\n\`/premcmds\` — Premium info\n\n**Prefix Style:**\n\`${prefix}ping\`\n\`${prefix}help\`` },
-        { name: '🔐 Owner Commands', value: isOwner 
-          ? `\`/antinuke enable/disable\` — Toggle protection\n\`/antinuke status\` — Check status\n\`/antinuke strictenable\` — Instant ban mode ON\n\`/antinuke strictdisable\` — Instant ban mode OFF\n\`/prefix set <new>\` — Change prefix\n\`/role build/add/remove\` — Manage roles\n\`/mod ban/unban/purge\` — Moderation\n\`/whitelist add/remove/list\` — Protect users\n\`/whitelist addr/remover\` — Protect roles\n\n**Prefix Style:**\n\`${prefix}prefix !!\`\n\`${prefix}antinuke enable\``
-          : '🔒 Only Server Owner or Bot Owner can use these' },
-        { name: '⭐ Premium Commands', value: isPremium 
-          ? `✅ **PREMIUM ACTIVE** ⭐\n\`/botpfp set\` — Change bot avatar\n\`/whitelist massadd <ids>\` — Bulk whitelist\n\`/whitelist massremove <ids>\` — Bulk remove\n\`/mod masspurge <amount>\` — Delete up to 500 messages\n\n**Prefix Style:**\n\`${prefix}premium activate <code>\``
-          : `🔒 **PREMIUM LOCKED**\nActivate with:\n\`/premium activate code:${CONFIG.premiumKey}\`\nOr:\n\`${prefix}premium activate ${CONFIG.premiumKey}\`` }
+        { name: '📋 Basic Commands', value: `\`/ping\` \`/help\` \`/premcmds\`\n\`${prefix}ping\` \`${prefix}help\`` },
+        { name: '🔐 Owner Commands', value: isOwner ? 'Full access — antinuke, prefix, roles, mod, whitelist' : '🔒 Server Owner only' },
+        { name: '⭐ Premium', value: isPremium ? '✅ ACTIVE — All features unlocked' : `🔒 LOCKED\nActivate:\n\`/premium activate code:${CONFIG.premiumKey}\`` }
       )
       .setColor(isPremium ? 'Gold' : 'Blue')
-      .setFooter({ text: `Prefix: ${prefix} • Type ${prefix}help anytime` })
     ]});
   }
 
@@ -220,9 +200,9 @@ client.on(Events.InteractionCreate, async interaction => {
       .setTitle('🛡️ Premium Features')
       .setDescription(`🔤 Prefix: \`${prefix}\``)
       .addFields(
-        { name: '📋 Basic', value: `\`/ping\` \`/help\` \`/premcmds\`\nPrefix: \`${prefix}ping\` \`${prefix}help\`` },
-        { name: '🔐 Owner Only', value: isOwner ? 'Anti-nuke control • Prefix change • Role management • Ban/Unban • Purge • Whitelist users & roles' : '🔒 Server Owner only' },
-        { name: '⭐ Premium', value: isPremium ? '✅ Active — Avatar change • Mass whitelist • Mass purge' : `🔒 Locked\nActivate:\n\`/premium activate code:${CONFIG.premiumKey}\`\n\`${prefix}premium activate ${CONFIG.premiumKey}\`` }
+        { name: '📋 Basic', value: '/ping /help /premcmds' },
+        { name: '🔐 Owner', value: isOwner ? 'Full control' : '🔒 Locked' },
+        { name: '⭐ Premium', value: isPremium ? '✅ Active' : `🔒 Activate with code:\n\`/premium activate code:${CONFIG.premiumKey}\`` }
       )
       .setColor(isPremium ? 'Gold' : 'Blue')
     ]});
@@ -233,7 +213,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const code = options.getString('activate');
     if (code === CONFIG.premiumKey) {
       CONFIG.premiumGuilds.set(guildId, true);
-      await interaction.reply('✅ **PREMIUM ACTIVATED!** All features unlocked ⭐✨');
+      await interaction.reply('✅ **PREMIUM ACTIVATED!** ⭐✨');
     } else {
       await interaction.reply({ content: '❌ Invalid code', ephemeral: true });
     }
@@ -244,8 +224,8 @@ client.on(Events.InteractionCreate, async interaction => {
     const sub = options.getSubcommand();
     if (sub === 'enable') CONFIG.thresholds = { bans: 2, kicks: 2, channels: 2, roles: 2, webhooks: 1, bots: 1 };
     if (sub === 'disable') CONFIG.thresholds = { bans: 999, kicks: 999, channels: 999, roles: 999, webhooks: 999, bots: 999 };
-    if (sub === 'strictenable') { CONFIG.strictMode = true; await interaction.reply('⚠️ STRICT MODE ON — Instant bans for all suspicious changes!'); return; }
-    if (sub === 'strictdisable') { CONFIG.strictMode = false; await interaction.reply('✅ Strict mode OFF — normal thresholds active'); return; }
+    if (sub === 'strictenable') { CONFIG.strictMode = true; await interaction.reply('⚠️ STRICT MODE ON — Instant bans!'); return; }
+    if (sub === 'strictdisable') { CONFIG.strictMode = false; await interaction.reply('✅ Strict mode OFF'); return; }
     if (sub === 'status') {
       await interaction.reply(`🛡️ Protection: **${CONFIG.thresholds.bans < 100 ? 'ACTIVE' : 'OFF'}**\nStrict Mode: **${CONFIG.strictMode ? 'ON' : 'OFF'}**\n🔤 Prefix: \`${getPrefix()}\``);
       return;
@@ -256,20 +236,18 @@ client.on(Events.InteractionCreate, async interaction => {
   if (commandName === 'prefix') {
     if (!isOwner) return interaction.reply({ content: '❌ Only Server Owner!', ephemeral: true });
     const newPrefix = options.getString('set');
-    if (newPrefix.length > 3) return interaction.reply({ content: '❌ Prefix max 3 characters', ephemeral: true });
+    if (newPrefix.length > 3) return interaction.reply({ content: '❌ Max 3 characters', ephemeral: true });
     CONFIG.guildPrefixes.set(guildId, newPrefix);
-    await interaction.reply(`✅ Prefix changed to \`${newPrefix}\`\nTry: \`${newPrefix}ping\` or \`${newPrefix}help\``);
+    await interaction.reply(`✅ Prefix changed to \`${newPrefix}\``);
   }
 
   if (commandName === 'botpfp') {
     if (!isPremium) return interaction.reply({ content: '⭐ Premium required!', ephemeral: true });
     if (!isOwner) return interaction.reply({ content: '❌ Only Server Owner!', ephemeral: true });
     const attachment = options.getAttachment('set');
-    if (!attachment) return interaction.reply({ content: '❌ No image provided', ephemeral: true });
-    try {
-      await client.user.setAvatar(attachment.url);
-      await interaction.reply('✅ Avatar updated! (Applies bot-wide)');
-    } catch (e) { await interaction.reply({ content: '❌ Failed to set avatar', ephemeral: true }); }
+    if (!attachment) return interaction.reply({ content: '❌ No image', ephemeral: true });
+    try { await client.user.setAvatar(attachment.url); await interaction.reply('✅ Avatar updated!'); }
+    catch (e) { await interaction.reply({ content: '❌ Failed to set avatar', ephemeral: true }); }
   }
 
   if (commandName === 'role') {
@@ -279,7 +257,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const name = options.getString('name');
       const color = options.getString('color') || '#0099ff';
       const role = await interaction.guild.roles.create({ name, color });
-      await interaction.reply(`✅ Created role: <@&${role.id}>`);
+      await interaction.reply(`✅ Created: <@&${role.id}>`);
     }
     if (sub === 'add') {
       const u = options.getUser('user');
@@ -318,11 +296,9 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     if (sub === 'masspurge') {
       if (!isPremium) return interaction.reply({ content: '⭐ Premium required!', ephemeral: true });
-      if (!isOwner) return interaction.reply({ content: '❌ Only Server Owner!', ephemeral: true });
-      const amt = options.getInteger('amount');
-      const deleted = Math.min(amt, 500);
-      await interaction.channel.bulkDelete(deleted, true);
-      await interaction.reply(`✅ Mass purged ${deleted} messages`);
+      const amt = Math.min(options.getInteger('amount'), 500);
+      await interaction.channel.bulkDelete(amt, true);
+      await interaction.reply(`✅ Mass purged ${amt} messages`);
     }
   }
 
@@ -351,15 +327,13 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     if (sub === 'massadd') {
       if (!isPremium) return interaction.reply({ content: '⭐ Premium required!', ephemeral: true });
-      if (!isOwner) return interaction.reply({ content: '❌ Only Server Owner!', ephemeral: true });
       const ids = options.getString('ids').split(/[\s,]+/).filter(Boolean);
       let added = 0;
       ids.forEach(id => { if (!CONFIG.whitelist.includes(id)) { CONFIG.whitelist.push(id); added++; } });
-      await interaction.reply(`✅ Mass added ${added} users to whitelist`);
+      await interaction.reply(`✅ Mass added ${added} users`);
     }
     if (sub === 'massremove') {
       if (!isPremium) return interaction.reply({ content: '⭐ Premium required!', ephemeral: true });
-      if (!isOwner) return interaction.reply({ content: '❌ Only Server Owner!', ephemeral: true });
       const ids = options.getString('ids').split(/[\s,]+/).filter(Boolean);
       const before = CONFIG.whitelist.length;
       CONFIG.whitelist = CONFIG.whitelist.filter(id => !ids.includes(id));
@@ -387,29 +361,15 @@ client.on(Events.MessageCreate, async message => {
 
   if (cmd === 'help') {
     const roleText = isBotOwner ? '👑 Bot Owner' : (isServerOwner ? '🏠 Server Owner' : '👤 Member');
-    return message.reply({ embeds: [new EmbedBuilder()
-      .setTitle('🛡️ SAKATO — Help Menu')
-      .setDescription(`🔤 **Your Prefix:** \`${prefix}\`\n👤 **Your Role:** ${roleText}`)
-      .addFields(
-        { name: '📋 Basic', value: `\`${prefix}ping\` — Check bot\n\`${prefix}help\` — Show this menu` },
-        { name: '🔐 Owner', value: isOwner
-          ? `\`${prefix}prefix !new\` — Change prefix\n\`${prefix}antinuke enable/disable/strictenable/strictdisable/status\`\n\`${prefix}whitelist add @user\`\n\`${prefix}whitelist remove @user\`\n\`${prefix}whitelist addr @role\`\n\`${prefix}whitelist remover @role\`\n\`${prefix}whitelist list\`\n\`${prefix}role build Name #color\`\n\`${prefix}role add @user @role\`\n\`${prefix}role remove @user @role\`\n\`${prefix}mod ban @user reason\`\n\`${prefix}mod unban userID\`\n\`${prefix}mod purge 50\``
-          : '🔒 Server Owner only' },
-        { name: '⭐ Premium', value: isPremium ? `✅ Active\n\`${prefix}premium activate code\` — Already activated!\n\`${prefix}botpfp\` — Change avatar\n\`${prefix}whitelist massadd id1 id2 id3\`\n\`${prefix}whitelist massremove id1 id2\`\n\`${prefix}mod masspurge 200\`` : `🔒 Locked\nActivate:\n\`${prefix}premium activate ${CONFIG.premiumKey}\`` }
-      )
-      .setColor(isPremium ? 'Gold' : 'Blue')
-    ]});
+    return message.reply(`🛡️ Help\n🔤 Prefix: ${prefix}\n👤 Role: ${roleText}\n\n📋 Basic: ${prefix}ping | ${prefix}help\n🔐 Owner: ${prefix}prefix | ${prefix}antinuke | ${prefix}whitelist\n⭐ Premium: ${isPremium?'✅ Active':'🔒 Locked'}`);
   }
-
-  if (cmd === 'ping') return message.reply(`🏓 Pong! ${client.ws.ping}ms\n🔤 Prefix: \`${prefix}\``);
-  
+  if (cmd === 'ping') return message.reply(`🏓 Pong! ${client.ws.ping}ms | Prefix: ${prefix}`);
   if (cmd === 'prefix' && isOwner) {
-    if (!args[0]) return message.reply(`🔤 Current prefix: \`${prefix}\``);
-    if (args[0].length > 3) return message.reply('❌ Max 3 characters');
+    if (!args[0]) return message.reply(`🔤 Current prefix: ${prefix}`);
+    if (args[0].length > 3) return message.reply('❌ Max 3 chars');
     CONFIG.guildPrefixes.set(message.guildId, args[0]);
-    return message.reply(`✅ Prefix changed to \`${args[0]}\`\nTry: \`${args[0]}help\``);
+    return message.reply(`✅ Prefix → ${args[0]}`);
   }
-  
   if (cmd === 'premium' && args[0] === 'activate' && isOwner) {
     if (args[1] === CONFIG.premiumKey) {
       CONFIG.premiumGuilds.set(message.guildId, true);
